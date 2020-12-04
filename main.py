@@ -1,6 +1,8 @@
 from z3 import *
 import dis
 
+IGNORE_LIST = {"LOAD_GLOBAL", "CALL_FUNCTION", "POP_TOP"}
+
 
 def dead_code(x, y):
     if x < 3:
@@ -30,10 +32,13 @@ def test(a):
     if a > 0 and a < 5:
         x = 1
 
-    b = a
+    b = a + 3
+    # b = a + 3
 
     if x == 1 and b > 6:
         print("Hello")
+
+    return 0
 
 
 def Solve(solver):
@@ -50,6 +55,7 @@ def instructionRetriver(bytecode, offset):
         if instr.offset == offset:
             return instr
     return instr
+
 
 """
 def Explorater(bytecode, index):
@@ -68,14 +74,36 @@ def Explorater(bytecode, index):
 """
 
 
-def previousSymbolRetriever(inAirConsts, inAirVariables, loadOrder):
+def previousSymbolRetriever(inAirConsts, inAirVariables, inAirBinaryOps, loadOrder):
     loadType = loadOrder.pop()
     if loadType == "LOAD_FAST":
         return "symbolRetriever[\"" + inAirVariables.pop() + "\"]"
     elif loadType == "LOAD_CONST":
         return inAirConsts.pop()
+    elif loadType == "BINARY_OP":
+        return sequenceSymbolRetriever(inAirConsts, inAirVariables, loadOrder, inAirBinaryOps.pop())
     else:
         raise RuntimeError('Failed to read values')
+
+
+def sequenceSymbolRetriever(inAirConsts, inAirVariables, loadOrder, opSymbol):
+    loadType = loadOrder.pop()
+    if loadType == "LOAD_FAST":
+        toReturn = opSymbol + " symbolRetriever[\"" + inAirVariables.pop() + "\"]"
+    elif loadType == "LOAD_CONST":
+        toReturn = opSymbol + " " + str(inAirConsts.pop())
+    else:
+        raise RuntimeError('Failed to read values')
+
+    loadType = loadOrder.pop()
+    if loadType == "LOAD_FAST":
+        toReturn = "symbolRetriever[\"" + inAirVariables.pop() + "\"] " + toReturn
+    elif loadType == "LOAD_CONST":
+        toReturn = str(inAirConsts.pop()) + " " + toReturn
+    else:
+        raise RuntimeError('Failed to read values')
+
+    return toReturn
 
 
 def Explorater(bytecode,
@@ -85,20 +113,28 @@ def Explorater(bytecode,
                symbolRetriever,
                inAirConsts,
                inAirVariables,
-               inAirOps,
+               inAirCompareOps,
+               inAirBinaryOps,
                loadOrder):
-
     instr = instructionRetriver(bytecode, offset)
 
     print(instr.offset)
 
     if instr.opname == "RETURN_VALUE":
-        print(inAirConsts)
+        # Return 0
+        loadOrder.pop()
+        inAirConsts.pop()
+
         print(symbolVersions)
+        print(symbolRetriever)
+        print(inAirConsts)
         print(inAirVariables)
-        print(inAirOps)
+        print(inAirCompareOps)
+        print(inAirBinaryOps)
+        print(loadOrder)
         print("RETURN_VALUE reached!")
         Solve(solver)
+
     else:
         if instr.opname == "LOAD_CONST":
             # stack
@@ -126,22 +162,35 @@ def Explorater(bytecode,
             name = str(instr.argval) + "@" + str(symbolVersions[instr.argval])
             symbolRetriever[name] = Int(name)
             # ___ assertion ___
-            previousSymbol = previousSymbolRetriever(inAirConsts, inAirVariables, loadOrder)
+            previousSymbol = previousSymbolRetriever(inAirConsts, inAirVariables, inAirBinaryOps, loadOrder)
             expression = "symbolRetriever[\"" + name + "\"] == " + str(previousSymbol)
             print(expression)
             solver.add(eval(expression))
 
         elif instr.opname == "COMPARE_OP":
             # stack
-            inAirOps.append(instr.argval)
+            inAirCompareOps.append(instr.argval)
+
+        elif instr.opname == "BINARY_ADD":
+            # stack
+            inAirBinaryOps.append("+")
+            loadOrder.append("BINARY_OP")
+
+        elif instr.opname == "BINARY_SUBTRACT":
+            # stack
+            inAirBinaryOps.append("-")
+            loadOrder.append("BINARY_OP")
 
         elif instr.opname == "POP_JUMP_IF_FALSE":
             # ___ assertion ___
-            previousSymbolA = previousSymbolRetriever(inAirConsts, inAirVariables, loadOrder)
-            previousSymbolB = previousSymbolRetriever(inAirConsts, inAirVariables, loadOrder)
-            expression = str(previousSymbolB) + " " + inAirOps.pop() + " " + str(previousSymbolA)
+            previousSymbolA = previousSymbolRetriever(inAirConsts, inAirVariables, inAirBinaryOps, loadOrder)
+            previousSymbolB = previousSymbolRetriever(inAirConsts, inAirVariables, inAirBinaryOps, loadOrder)
+            expression = str(previousSymbolB) + " " + inAirCompareOps.pop() + " " + str(previousSymbolA)
             print(expression)
             solver.add(eval(expression))
+
+        elif instr.opname not in IGNORE_LIST:
+            raise RuntimeError('Failed to read assembly instruction: ' + instr.opname)
 
         Explorater(bytecode,
                    offset + 2,
@@ -150,7 +199,8 @@ def Explorater(bytecode,
                    symbolRetriever,
                    inAirConsts,
                    inAirVariables,
-                   inAirOps,
+                   inAirCompareOps,
+                   inAirBinaryOps,
                    loadOrder)
 
 
@@ -165,6 +215,7 @@ if __name__ == '__main__':
                solver,
                {},
                {},
+               [],
                [],
                [],
                [],
