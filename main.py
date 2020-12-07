@@ -4,28 +4,39 @@ import dis
 IGNORE_LIST = {"LOAD_GLOBAL", "CALL_FUNCTION", "POP_TOP"}
 DEBUG = 0
 
-# EDITABLE - invariants
-INVARIANTS = {"_p": {"!= -3"}}
-# EDITABLE - core conditions list
-CORE_CONDITIONS = {"x": {"!= 0"}}
-# EDITABLE - post conditions list
-POST_CONDITIONS = {"<= -3"}
-# EDITABLE - pre conditions list
-PRE_CONDITIONS = {"< 2"}
+# parameter in
+parameterName = "a"
 
-def to_analyse(_p):
-    if _p > 0:
-        x = 0
+# EDITABLE - invariants
+# INVARIANTS = {parameterName: {"> 100"}, "y": {" == 332"}}
+INVARIANTS = {parameterName: {}}
+
+# EDITABLE - core conditions list
+# CORE_CONDITIONS = {"y": {"< 0"}}
+CORE_CONDITIONS = {}
+
+# EDITABLE - post conditions list
+POST_CONDITIONS = {"== 100"}
+# POST_CONDITIONS = {}
+
+# EDITABLE - pre conditions list
+# PRE_CONDITIONS = {"< 5"} # else -> Dead code à cause de la pre condition
+PRE_CONDITIONS = {}
+
+def to_analyse(a):
+    x = a + 3
+
+    if a < 5:
+        x = 1
+        y = a - 2
     else:
-        x = _p
+        x = x - 3
+        y = x
 
     return x
 
 
 def addPreCondition(solver, symbolRetriever):
-    # parameter in
-    parameterName = "_p"
-
     for cond in PRE_CONDITIONS:
         assertion = "symbolRetriever[\"" + parameterName + "@0\"] " + cond
         if DEBUG:
@@ -55,10 +66,11 @@ def addInvariants(solver, symbolRetriever, symbolVersions):
     for symbol in INVARIANTS.keys():
         for cond in INVARIANTS[symbol]:
             for i in range(0, symbolVersions[symbol] + 1):
-                assertion = "symbolRetriever[\"" + symbol + "@" + str(i) + "\"] " + cond
-                if DEBUG:
-                    print("coreCond: " + assertion)
-                solver.add(eval(assertion))
+                if (symbol + "@" + str(i)) in symbolRetriever:
+                    assertion = "symbolRetriever[\"" + symbol + "@" + str(i) + "\"] " + cond
+                    if DEBUG:
+                        print("coreCond: " + assertion)
+                    solver.add(eval(assertion))
 
 
 def Solve(solver, symbolRetriever, returnedSymbol, symbolVersions):
